@@ -99,6 +99,7 @@ export function usePigeonRace() {
   const liveProgress = reactive<LiveProgress[]>([])
   const scanHistory = ref<ScanResult[]>([])
   const isSimulationRunning = ref(false)
+  const isInitialized = ref(false)
   const currentTime = ref<Date>(new Date())
 
   let simulationTimer: number | null = null
@@ -260,7 +261,10 @@ export function usePigeonRace() {
     if (isSimulationRunning.value) return
     isSimulationRunning.value = true
 
-    initRace()
+    if (!isInitialized.value) {
+      initRace()
+      isInitialized.value = true
+    }
 
     simulationTimer = window.setInterval(() => {
       updateLiveProgress()
@@ -287,7 +291,9 @@ export function usePigeonRace() {
     stopSimulation()
     pigeons.value.forEach((p) => (p.status = '飞行中'))
     scanHistory.value = []
+    isInitialized.value = false
     initRace()
+    isInitialized.value = true
   }
 
   const rankedRecords = computed(() => calculateRankings([...raceRecords]))
