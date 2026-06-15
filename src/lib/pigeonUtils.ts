@@ -25,6 +25,22 @@ export function calculateSpeed(distance: number, releaseTime: Date, arrivalTime:
   return Number((distance / timeDiffMinutes).toFixed(2))
 }
 
+export const RING_NUMBER_PATTERN = /^CHN-\d{4}-\d{7}$/
+
+export function validateRingNumber(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return '请输入脚环编号'
+  if (!RING_NUMBER_PATTERN.test(trimmed)) {
+    return '脚环格式应为 CHN-XXXX-XXXXXXX（如 CHN-2024-0000001）'
+  }
+  return null
+}
+
+export function isLikelyScannerInput(chars: string): boolean {
+  if (chars.length < 3) return false
+  return /[\w-]{3,}/.test(chars)
+}
+
 export function calculateSpeedFromMs(
   distanceMeters: number,
   releaseTime: Date,

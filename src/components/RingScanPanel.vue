@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import type { ScanResult, Pigeon } from '@/types/pigeon'
 import { cn } from '@/lib/utils'
-import { formatTime } from '@/lib/pigeonUtils'
+import { formatTime, RING_NUMBER_PATTERN, validateRingNumber, isLikelyScannerInput } from '@/lib/pigeonUtils'
 
 const props = defineProps<{
   scanHistory: ScanResult[]
@@ -24,25 +24,71 @@ const emit = defineEmits<{
 const inputValue = ref('')
 const lastScanResult = ref<ScanResult | null>(null)
 const isShaking = ref(false)
+const validationError = ref('')
+
+let scannerBuffer = ''
+let scannerTimer: number | null = null
 
 const quickScanList = computed(() => {
   return props.inFlightPigeons.slice(0, 8)
 })
 
-watch(inputValue, (val) => {
-  if (val.length >= 14) {
-    handleScan()
-  }
-})
+function onInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  const newValue = target.value
+  inputValue.value = newValue
+  validationError.value = ''
 
-function handleScan() {
-  if (!inputValue.value.trim()) {
+  handleScannerInput(newValue)
+}
+
+function handleScannerInput(value: string) {
+  const addedChars = value.slice(scannerBuffer.length)
+  scannerBuffer = value
+
+  if (scannerTimer) {
+    clearTimeout(scannerTimer)
+  }
+
+  if (addedChars.length > 0 && isLikelyScannerInput(addedChars)) {
+    scannerTimer = window.setTimeout(() => {
+      if (RING_NUMBER_PATTERN.test(scannerBuffer.trim())) {
+        submitScan()
+      }
+      scannerBuffer = ''
+      scannerTimer = null
+    }, 80)
+  } else {
+    scannerTimer = window.setTimeout(() => {
+      scannerBuffer = ''
+      scannerTimer = null
+    }, 200)
+  }
+}
+
+function submitScan() {
+  const error = validateRingNumber(inputValue.value)
+  if (error) {
+    validationError.value = error
     triggerShake()
     return
   }
 
   emit('scan', inputValue.value.trim())
   inputValue.value = ''
+  scannerBuffer = ''
+  validationError.value = ''
+}
+
+function handleScan() {
+  submitScan()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    submitScan()
+  }
 }
 
 function triggerShake() {
@@ -53,9 +99,8 @@ function triggerShake() {
 }
 
 function quickScan(ringNumber: string) {
-  inputValue.value = ringNumber
+  validationError.value = ''
   emit('scan', ringNumber)
-  inputValue.value = ''
 }
 
 watch(
@@ -113,13 +158,18 @@ watch(
 
           <div class="flex-1 relative">
             <input
-              v-model="inputValue"
+              :value="inputValue"
               type="text"
               placeholder="请扫描或输入脚环编号，如 CHN-2024-0000001"
               class="w-full bg-transparent outline-none text-slate-800 placeholder-slate-400 font-mono text-base"
-              @keyup.enter="handleScan"
+              @input="onInput"
+              @keydown="handleKeydown"
             />
-            <div v-if="lastScanResult" class="flex items-center gap-2 mt-0.5">
+            <div v-if="validationError" class="flex items-center gap-1.5 mt-1">
+              <AlertCircle class="w-3 h-3 text-red-500 flex-shrink-0" />
+              <span class="text-xs text-red-500 font-medium">{{ validationError }}</span>
+            </div>
+            <div v-else-if="lastScanResult" class="flex items-center gap-2 mt-0.5">
               <Clock class="w-3 h-3 text-slate-400" />
               <span class="text-xs text-slate-500">
                 {{ formatTime(lastScanResult.scanTime) }}
