@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Play, Pause, RotateCcw, Trophy, Shield, Radio } from 'lucide-vue-next'
+import { Play, Pause, RotateCcw, Trophy, Shield, Radio, BarChart3 } from 'lucide-vue-next'
 import { usePigeonRace } from '@/composables/usePigeonRace'
 import RaceStatsCards from '@/components/RaceStatsCards.vue'
 import LiveProgressPanel from '@/components/LiveProgressPanel.vue'
@@ -8,11 +8,15 @@ import RankingBoard from '@/components/RankingBoard.vue'
 import LoftGroupRanking from '@/components/LoftGroupRanking.vue'
 import RaceMapView from '@/components/RaceMapView.vue'
 import RingScanPanel from '@/components/RingScanPanel.vue'
+import ProgressTrendChart from '@/components/charts/ProgressTrendChart.vue'
+import LoftCompareBarChart from '@/components/charts/LoftCompareBarChart.vue'
+import SpeedDistributionChart from '@/components/charts/SpeedDistributionChart.vue'
 
 const {
   lofs,
   pigeons,
   releaseTime,
+  raceRecords,
   liveProgress,
   scanHistory,
   isSimulationRunning,
@@ -27,11 +31,28 @@ const {
   resetRace,
 } = usePigeonRace()
 
-const activeTab = ref<'progress' | 'map' | 'ranking' | 'lofts'>('map')
+const activeTab = ref<'progress' | 'map' | 'ranking' | 'lofts' | 'dashboard'>('map')
 
 const inFlightPigeons = computed(() =>
   pigeons.value.filter((p) => p.status === '飞行中')
 )
+
+const loftChartStats = computed(() => {
+  return loftGroupedRecords.value.map((group) => {
+    const arrivedRecords = group.records.filter((r) => r.arrivalTime && r.speed)
+    const bestSpeed = arrivedRecords.length > 0
+      ? Math.max(...arrivedRecords.map((r) => r.speed || 0))
+      : 0
+
+    return {
+      loft: group.loft,
+      avgSpeed: group.avgSpeed,
+      bestSpeed,
+      count: group.records.length,
+      arrivedCount: arrivedRecords.length,
+    }
+  })
+})
 
 function handleScan(ringNumber: string) {
   scanRingNumber(ringNumber)
@@ -120,6 +141,18 @@ onMounted(() => {
                 <Shield class="w-3.5 h-3.5" />
                 鸽舍
               </button>
+              <button
+                @click="activeTab = 'dashboard'"
+                :class="[
+                  'px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5',
+                  activeTab === 'dashboard'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800',
+                ]"
+              >
+                <BarChart3 class="w-3.5 h-3.5" />
+                看板
+              </button>
             </div>
 
             <div class="flex items-center gap-2">
@@ -182,6 +215,22 @@ onMounted(() => {
 
           <div v-show="activeTab === 'lofts'">
             <LoftGroupRanking :loft-groups="loftGroupedRecords" />
+          </div>
+
+          <div v-show="activeTab === 'dashboard'" class="space-y-6">
+            <ProgressTrendChart
+              :race-records="raceRecords"
+              :release-time="releaseTime"
+              :current-time="currentTime"
+              :total-pigeons="stats.total"
+            />
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <LoftCompareBarChart :loft-stats="loftChartStats" />
+              <SpeedDistributionChart
+                :race-records="raceRecords"
+                :lofs="lofs"
+              />
+            </div>
           </div>
         </div>
 
