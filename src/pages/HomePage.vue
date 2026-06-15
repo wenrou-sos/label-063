@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Play, Pause, RotateCcw, Trophy, Shield, Radio, BarChart3 } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Play, Pause, RotateCcw, Trophy, Shield, Radio, BarChart3, FileText } from 'lucide-vue-next'
 import { usePigeonRace } from '@/composables/usePigeonRace'
 import RaceStatsCards from '@/components/RaceStatsCards.vue'
 import LiveProgressPanel from '@/components/LiveProgressPanel.vue'
@@ -11,6 +11,8 @@ import RingScanPanel from '@/components/RingScanPanel.vue'
 import ProgressTrendChart from '@/components/charts/ProgressTrendChart.vue'
 import LoftCompareBarChart from '@/components/charts/LoftCompareBarChart.vue'
 import SpeedDistributionChart from '@/components/charts/SpeedDistributionChart.vue'
+import RaceReportModal from '@/components/RaceReportModal.vue'
+import type { RaceReportData } from '@/types/pigeon'
 
 const {
   lofs,
@@ -25,6 +27,8 @@ const {
   loftGroupedRecords,
   stats,
   raceReleasePoint,
+  isRaceFinished,
+  generateReportData,
   scanRingNumber,
   startSimulation,
   stopSimulation,
@@ -54,9 +58,47 @@ const loftChartStats = computed(() => {
   })
 })
 
+const showReportModal = ref(false)
+const currentReportData = ref<RaceReportData | null>(null)
+const hasShownAutoReport = ref(false)
+
 function handleScan(ringNumber: string) {
   scanRingNumber(ringNumber)
 }
+
+function handleGenerateReport() {
+  currentReportData.value = generateReportData()
+  showReportModal.value = true
+}
+
+function handleCloseReport() {
+  showReportModal.value = false
+}
+
+function handleResetRace() {
+  hasShownAutoReport.value = false
+  showReportModal.value = false
+  currentReportData.value = null
+  resetRace()
+}
+
+watch(isRaceFinished, (finished) => {
+  if (finished && !hasShownAutoReport.value && stats.value.arrived > 0) {
+    hasShownAutoReport.value = true
+    setTimeout(() => {
+      handleGenerateReport()
+    }, 1000)
+  }
+})
+
+watch(stats, (newStats) => {
+  if (newStats.arrived > 0 && newStats.inFlight === 0 && !hasShownAutoReport.value) {
+    hasShownAutoReport.value = true
+    setTimeout(() => {
+      handleGenerateReport()
+    }, 1000)
+  }
+}, { deep: true })
 
 onMounted(() => {
   startSimulation()
@@ -157,6 +199,13 @@ onMounted(() => {
 
             <div class="flex items-center gap-2">
               <button
+                @click="handleGenerateReport"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm"
+              >
+                <FileText class="w-4 h-4" />
+                生成报告
+              </button>
+              <button
                 v-if="!isSimulationRunning"
                 @click="startSimulation"
                 class="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
@@ -173,7 +222,7 @@ onMounted(() => {
                 暂停
               </button>
               <button
-                @click="resetRace"
+                @click="handleResetRace"
                 class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
               >
                 <RotateCcw class="w-4 h-4" />
@@ -312,5 +361,11 @@ onMounted(() => {
         </div>
       </div>
     </footer>
+
+    <RaceReportModal
+      :visible="showReportModal"
+      :report-data="currentReportData"
+      @close="handleCloseReport"
+    />
   </div>
 </template>

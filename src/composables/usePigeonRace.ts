@@ -6,6 +6,8 @@ import type {
   LiveProgress,
   ScanResult,
   PositionPoint,
+  LoftRankingItem,
+  RaceReportData,
 } from '@/types/pigeon'
 import {
   calculateDistance,
@@ -336,6 +338,159 @@ export function usePigeonRace() {
     }
   })
 
+  const isRaceFinished = computed(() => {
+    return stats.value.arrived > 0 && stats.value.inFlight === 0
+  })
+
+  const raceBasicInfo = computed(() => {
+    const distances = raceRecords.map((r) => r.distance)
+    const avgDistance = distances.length > 0
+      ? distances.reduce((a, b) => a + b, 0) / distances.length
+      : 0
+
+    return {
+      name: '第 2024 届春季全国精英赛',
+      distance: Number((avgDistance / 1000).toFixed(2)),
+      releaseLocation: '北京市天安门',
+      releaseCoords: {
+        lat: RACE_RELEASE_POINT.lat,
+        lng: RACE_RELEASE_POINT.lng,
+      },
+      weather: '晴 · 微风',
+      weatherDetail: '东南风 2-3 级 · 22°C',
+      releaseTime: releaseTime.value,
+      endTime: isRaceFinished.value
+        ? raceRecords.reduce((latest, r) => {
+            if (!r.arrivalTime) return latest
+            return r.arrivalTime > latest ? r.arrivalTime : latest
+          }, releaseTime.value)
+        : null,
+    }
+  })
+
+  const topThreeRecords = computed(() => {
+    return rankedRecords.value.slice(0, 3).map((r) => ({
+      rank: r.rank,
+      ringNumber: r.ringNumber,
+      pigeonName: r.pigeonName,
+      loftName: r.loftName,
+      speed: r.speed,
+      distance: r.distance,
+      arrivalTime: r.arrivalTime,
+      releaseTime: r.releaseTime,
+    }))
+  })
+
+  const loftReturnRankings = computed<LoftRankingItem[]>(() => {
+    const loftStats: Map<string, LoftRankingItem> = new Map()
+
+    lofs.value.forEach((loft) => {
+      loftStats.set(loft.id, {
+        loftId: loft.id,
+        loftName: loft.name,
+        loftColor: loft.color,
+        totalPigeons: 0,
+        arrivedPigeons: 0,
+        returnRate: 0,
+        avgSpeed: 0,
+        bestSpeed: 0,
+      })
+    })
+
+    raceRecords.forEach((record) => {
+      const stat = loftStats.get(record.loftId)
+      if (!stat) return
+
+      stat.totalPigeons++
+      if (record.arrivalTime) {
+        stat.arrivedPigeons++
+        if (record.speed) {
+          stat.avgSpeed += record.speed
+          if (record.speed > stat.bestSpeed) {
+            stat.bestSpeed = record.speed
+          }
+        }
+      }
+    })
+
+    const result: LoftRankingItem[] = []
+    loftStats.forEach((stat) => {
+      if (stat.totalPigeons > 0) {
+        stat.returnRate = Number(((stat.arrivedPigeons / stat.totalPigeons) * 100).toFixed(2))
+        stat.avgSpeed = stat.arrivedPigeons > 0
+          ? Number((stat.avgSpeed / stat.arrivedPigeons).toFixed(2))
+          : 0
+        result.push(stat)
+      }
+    })
+
+    return result.sort((a, b) => b.returnRate - a.returnRate)
+  })
+
+  const arrivalTimeDistribution = computed(() => {
+    const arrivedRecords = raceRecords.filter((r) => r.arrivalTime)
+    if (arrivedRecords.length === 0) {
+      return { bins: [], counts: [], maxCount: 0 }
+    }
+
+    const arrivalTimes = arrivedRecords.map((r) => {
+      const diffMs = r.arrivalTime!.getTime() - r.releaseTime.getTime()
+      return diffMs / (1000 * 60)
+    })
+
+    const minTime = Math.min(...arrivalTimes)
+    const maxTime = Math.max(...arrivalTimes)
+    const binCount = Math.min(10, Math.ceil(maxTime - minTime) || 1)
+    const binSize = Math.max(10, (maxTime - minTime) / binCount)
+
+    const bins: { start: number; end: number; label: string }[] = []
+    const counts: number[] = []
+
+    for (let i = 0; i < binCount; i++) {
+      const start = minTime + i * binSize
+      const end = minTime + (i + 1) * binSize
+      const startMins = Math.floor(start)
+      const endMins = Math.floor(end)
+      bins.push({
+        start,
+        end,
+        label: `${startMins}-${endMins}分钟`,
+      })
+      counts.push(0)
+    }
+
+    arrivalTimes.forEach((time) => {
+      const binIndex = Math.min(
+        Math.floor((time - minTime) / binSize),
+        binCount - 1
+      )
+      if (binIndex >= 0 && binIndex < counts.length) {
+        counts[binIndex]++
+      }
+    })
+
+    return {
+      bins,
+      counts,
+      maxCount: Math.max(...counts),
+    }
+  })
+
+  function generateReportData(): RaceReportData {
+    return {
+      basicInfo: raceBasicInfo.value,
+      totalPigeons: stats.value.total,
+      arrivedPigeons: stats.value.arrived,
+      returnRate: stats.value.total > 0
+        ? Number(((stats.value.arrived / stats.value.total) * 100).toFixed(2))
+        : 0,
+      topThree: topThreeRecords.value,
+      loftRankings: loftReturnRankings.value,
+      timeDistribution: arrivalTimeDistribution.value,
+      generateTime: new Date(),
+    }
+  }
+
   const raceReleasePoint = computed(() => RACE_RELEASE_POINT)
 
   onUnmounted(() => {
@@ -355,10 +510,16 @@ export function usePigeonRace() {
     loftGroupedRecords,
     stats,
     raceReleasePoint,
+    isRaceFinished,
+    raceBasicInfo,
+    topThreeRecords,
+    loftReturnRankings,
+    arrivalTimeDistribution,
     initRace,
     scanRingNumber,
     startSimulation,
     stopSimulation,
     resetRace,
+    generateReportData,
   }
 }
